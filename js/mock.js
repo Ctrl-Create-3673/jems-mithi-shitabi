@@ -42,9 +42,9 @@
     book: function (q) { if (q.website) fail("Bad request."); if (!db.settings.bookingOpen) fail("Online booking is closed. Please contact the Class 10 girls."); return create(q, "Parent form", "Parent form"); },
     lookup: function (q) { var b = db.bookings.find(function (x) { return x.id.toUpperCase() === String(q.id || "").trim().toUpperCase() && x.mobile === String(q.mobile || "").replace(/\D/g, "").slice(-10); }); if (!b) fail("No booking matches that ID and mobile number."); return { booking: b }; },
     staffLogin: function (q) {
-      var role = q.code === "teacher" ? "admin" : q.code === "girls" ? "staff" : ""; if (!role) fail("That code isn't right.");
-      if (String(q.name || "").trim().length < 2) fail("Enter your name so records show who did what.");
-      var tok = Math.random().toString(36).slice(2); sessions[tok] = { role: role, name: q.name.trim() }; put(SKEY, sessions); return { token: tok, user: sessions[tok] };
+      var team = { "11111111": "staff", "22222222": "admin" }, its = String(q.its || "").trim();
+      if (!team[its] || String(q.code || "").trim() !== its) fail("That ITS number and password don't match.");
+      var tok = Math.random().toString(36).slice(2); sessions[tok] = { role: team[its], name: its, its: its }; put(SKEY, sessions); return { token: tok, user: sessions[tok] };
     },
     dashboard: function () {
       var live = db.bookings.filter(function (b) { return b.status !== "Cancelled"; }), sum = function (a, f) { return a.reduce(function (t, x) { return t + f(x); }, 0); };

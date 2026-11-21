@@ -5,8 +5,7 @@
 
  One-time setup (in a NEW blank Google Sheet → Extensions → Apps Script):
  1. Paste this file as Code.gs and save.
- 2. Project Settings → Script Properties → add STAFF_CODE (for the girls) and ADMIN_CODE (for the teacher in charge).
- 3. Run setupSheets() once. Then run selfCheck().
+ 2. Run setupSheets() once. Then add team logins in the "Team" tab (ITS, Name, Role Staff/Admin, Password) and run selfCheck().
  4. Deploy → New deployment → Web app → Execute as: Me, Who has access: Anyone.
 ************************************************/
 
@@ -19,6 +18,7 @@ const BOOKING_HEADERS = ["Booking ID", "Created At", "Source", "Name", "Mobile",
   "Status", "Paid Amount", "Payment Mode", "Payment Ref", "Received By", "Paid At", "Notes", "Updated At", "Updated By"];
 const B = { id: 0, created: 1, source: 2, name: 3, mobile: 4, its: 5, thaals: 6, cards: 7, due: 8, status: 9,
   paid: 10, mode: 11, ref: 12, receivedBy: 13, paidAt: 14, notes: 15, updated: 16, updatedBy: 17 };
+const TEAM_HEADERS = ["ITS", "Name", "Role", "Password"];
 const EXPENSE_HEADERS = ["Expense ID", "Date", "Item", "Category", "Amount", "Paid By", "Note", "Added At", "Added By"];
 
 /************************************************
@@ -126,7 +126,11 @@ function newId(prefix) {
     Math.floor(Math.random() * 900 + 100);
 }
 
-function log(user, action) { tab("Audit Log", ["Timestamp", "User", "Action"]).appendRow([new Date(), user, action]); }
+// Any change may alter prices or thaals left, so it also clears the cached event summary.
+function log(user, action) {
+  CacheService.getScriptCache().remove("event");
+  tab("Audit Log", ["Timestamp", "User", "Action"]).appendRow([new Date(), user, action]);
+}
 
 function withLock(fn) {
   const lock = LockService.getScriptLock();
@@ -165,10 +169,14 @@ function createBooking(req, source, by) {
 const ACTIONS = {
   /* ---- public ---- */
   event: { public: true, run: function () {
+    const cache = CacheService.getScriptCache(), hit = cache.get("event");
+    if (hit) return JSON.parse(hit);
     const s = settings(), list = readBookings();
     const booked = bookedThaals(list);
-    return { thaalPrice: s.thaalPrice, cardPrice: s.cardPrice, thaalLimit: s.thaalLimit, bookingOpen: s.bookingOpen,
+    const out = { thaalPrice: s.thaalPrice, cardPrice: s.cardPrice, thaalLimit: s.thaalLimit, bookingOpen: s.bookingOpen,
       thaalsLeft: s.thaalLimit ? Math.max(0, s.thaalLimit - booked) : null };
+    cache.put("event", JSON.stringify(out), 30);
+    return out;
   } },
 
   book: { public: true, run: function (req) {
@@ -191,14 +199,15 @@ const ACTIONS = {
   } },
 
   staffLogin: { public: true, run: function (req) {
-    const p = PropertiesService.getScriptProperties();
-    const code = String(req.code || ""), name = clean(req.name, 60);
-    if (!p.getProperty("STAFF_CODE") || !p.getProperty("ADMIN_CODE")) throw new Error("Login codes are not set. Add STAFF_CODE and ADMIN_CODE in Script Properties.");
-    Utilities.sleep(400); // slows code guessing
-    let role = code === p.getProperty("ADMIN_CODE") ? "admin" : code === p.getProperty("STAFF_CODE") ? "staff" : "";
-    if (!role) throw new Error("That code isn't right.");
-    if (name.length < 2) throw new Error("Enter your name so records show who did what.");
-    const user = { role: role, name: name };
+    const its = clean(req.its, 20), pw = String(req.code || "").trim();
+    if (!its || !pw) throw new Error("Enter your ITS number and password.");
+    Utilities.sleep(400); // slows password guessing
+    // Display values keep ITS numbers and passwords as typed, even if the cells hold numbers.
+    const row = tab("Team", TEAM_HEADERS).getDataRange().getDisplayValues().slice(1).find(r => String(r[0]).trim() === its);
+    if (!row || !String(row[3]).trim() || String(row[3]).trim() !== pw) throw new Error("That ITS number and password don't match.");
+    const role = String(row[2]).trim().toLowerCase() === "admin" ? "admin" : "staff";
+    const name = String(row[1]).trim() || its;
+    const user = { role: role, name: name, its: its };
     const token = Utilities.getUuid();
     CacheService.getScriptCache().put("s:" + token, JSON.stringify(user), SESSION_HOURS * 3600);
     log(name, "Logged in (" + role + ")");
@@ -332,6 +341,9 @@ function setupSheets() {
   const s = tab("Settings", ["Key", "Value"]); style(s, 2);
   if (s.getLastRow() < 5) s.getRange(2, 1, 4, 2).setValues([["Thaal Price", 2100], ["Card Price", 300], ["Thaal Limit", 0], ["Booking Open", "YES"]]);
   style(tab("Audit Log", ["Timestamp", "User", "Action"]), 3);
+  const t = tab("Team", TEAM_HEADERS); style(t, TEAM_HEADERS.length);
+  t.getRange(2, 1, t.getMaxRows() - 1, 4).setNumberFormat("@");
+  t.getRange(2, 3, t.getMaxRows() - 1, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["Staff", "Admin"], true).build());
   const def = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Sheet1");
   if (def && def.getLastRow() === 0) SpreadsheetApp.getActiveSpreadsheet().deleteSheet(def);
 }
@@ -341,9 +353,9 @@ function setupSheets() {
 ************************************************/
 
 function selfCheck() {
-  const p = PropertiesService.getScriptProperties();
-  if (!p.getProperty("STAFF_CODE") || !p.getProperty("ADMIN_CODE")) throw new Error("Add STAFF_CODE and ADMIN_CODE in Script Properties.");
-  if (p.getProperty("STAFF_CODE") === p.getProperty("ADMIN_CODE")) throw new Error("STAFF_CODE and ADMIN_CODE must be different.");
+  const team = tab("Team", TEAM_HEADERS).getDataRange().getDisplayValues().slice(1).filter(r => r[0] && r[3]);
+  if (!team.length) throw new Error("Add at least one login in the Team tab (ITS, Name, Role, Password).");
+  if (!team.some(r => String(r[2]).toLowerCase() === "admin")) throw new Error("Make at least one Team row an Admin.");
   if (statusFor(2100, 0, "") !== "Pending" || statusFor(2100, 1000, "") !== "Partly paid" || statusFor(2100, 2100, "") !== "Paid") throw new Error("Status rule broken.");
   const s = settings();
   Logger.log("OK: thaal ₹%s, card ₹%s, limit %s, booking %s, %s bookings so far", s.thaalPrice, s.cardPrice, s.thaalLimit || "none", s.bookingOpen ? "open" : "closed", readBookings().length);

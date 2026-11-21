@@ -67,7 +67,13 @@
   tick(); setInterval(tick, 30000);
 
   function loadEvent() {
+    try { var cached = JSON.parse(localStorage.getItem("ms-event")); if (cached) showEvent(cached); } catch (err) {}
     return api("event").then(function (e) {
+      try { localStorage.setItem("ms-event", JSON.stringify(e)); } catch (err) {}
+      showEvent(e);
+    }).catch(function () {});
+  }
+  function showEvent(e) {
       state.event = e;
       $("#thaal-price").textContent = rs(e.thaalPrice); $("#card-price").textContent = rs(e.cardPrice);
       $("#c-thaal-price").textContent = rs(e.thaalPrice) + " each"; $("#c-card-price").textContent = rs(e.cardPrice) + " each";
@@ -77,7 +83,6 @@
       if (e.thaalsLeft === 0) $("#closed-note").textContent = "All thaals are booked. You can still call the girls to ask about cards.";
       $$('.invite a[href="#book"]').forEach(function (a) { a.hidden = closed; });
       bookTotal();
-    }).catch(function () {});
   }
 
   /* ---------- booking (parents) ---------- */
@@ -141,13 +146,13 @@
   $("#login-form").addEventListener("submit", function (ev) {
     ev.preventDefault();
     var btn = $("button[type=submit]", this); busy(btn, true); say($("#login-alert"));
-    api("staffLogin", { name: $("#l-name").value.trim(), code: $("#l-code").value }).then(function (r) {
+    api("staffLogin", { its: $("#l-name").value.trim(), code: $("#l-code").value }).then(function (r) {
       state.token = r.token; state.user = r.user; store("ms-session", JSON.stringify(r));
       $("#l-code").value = ""; startStaff(); location.hash = "#dash";
     }).catch(function (e) { say($("#login-alert"), e.message); }).finally(function () { busy(btn, false); });
   });
   function startStaff() {
-    $("#who").hidden = false; $("#who").textContent = state.user.name + (state.user.role === "admin" ? " · Teacher" : "");
+    $("#who").hidden = false; $("#who").textContent = state.user.name + (state.user.role === "admin" ? " · Admin" : "");
     $("#logout").hidden = false; buildNav();
   }
   function logout(expired) {
