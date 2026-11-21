@@ -1,6 +1,6 @@
 /* Event details shown on the site, and the Apps Script web app URL (ends in /exec). Empty API_URL = demo mode. */
 window.MS_CONFIG = {
-  API_URL: "",
+  API_URL: "https://script.google.com/macros/s/AKfycbwHeQdltUVZNx7T-YRVOhMdTA_zXnVzO_kqKIyarqExlOBzPRUckgrggGZOui8xmyV8/exec",
   event: {
     title: "Mithi Shitabi",
     host: "Class 10 girls, Jamali English Medium School",
